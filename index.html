@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三目並べゲーム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+        }
+        /* カスタムスタイルでXとOの色を調整 */
+        .player-x {
+            color: #3b82f6; /* Tailwind blue-500 */
+        }
+        .player-o {
+            color: #ec4899; /* Tailwind pink-500 */
+        }
+        .winning-cell {
+            background-color: #a7f3d0; /* Tailwind green-200 */
+        }
+        /* ボタンのフォーカスリングを少し目立たせる */
+        .cell-button:focus, #resetButton:focus, #closeMessageButton:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4); /* blue-500 with opacity */
+        }
+        /* メッセージボックスの表示/非表示を滑らかに */
+        #messageBox {
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
+        #messageBox.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="container mx-auto p-4 sm:p-6 md:p-8 bg-white rounded-xl shadow-2xl w-full max-w-lg">
+        <h1 class="text-3xl sm:text-4xl font-bold mb-6 sm:mb-8 text-center text-gray-800">三目並べゲーム</h1>
+        
+        <div id="statusArea" class="text-xl sm:text-2xl mb-6 text-center font-semibold text-gray-700 h-8">
+            </div>
+
+        <div id="gameBoard" class="grid grid-cols-3 gap-2 w-full max-w-xs sm:max-w-sm mx-auto aspect-square rounded-lg overflow-hidden shadow-lg">
+            </div>
+
+        <button id="resetButton" class="mt-8 w-full max-w-xs sm:max-w-sm mx-auto px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:bg-blue-700 transition duration-150 ease-in-out text-lg">
+            リセット
+        </button>
+    </div>
+
+    <div id="messageBox" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 hidden">
+        <div class="bg-white p-6 sm:p-8 rounded-lg shadow-xl text-center w-full max-w-sm">
+            <p id="messageText" class="text-lg sm:text-xl mb-6 text-gray-700"></p>
+            <button id="closeMessageButton" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:bg-blue-700 transition duration-150 ease-in-out">
+                OK
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // DOM要素の取得
+        const statusDisplay = document.getElementById('statusArea');
+        const gameBoardElement = document.getElementById('gameBoard');
+        const resetButton = document.getElementById('resetButton');
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+        const closeMessageButton = document.getElementById('closeMessageButton');
+
+        // ゲームの状態に関する変数
+        let currentPlayer = 'X'; // 現在のプレイヤー (X または O)
+        let board = ['', '', '', '', '', '', '', '', '']; // 9つのセルに対応する盤面の状態
+        let isGameActive = true; // ゲームが進行中かどうか
+        const cells = []; // セル要素を格納する配列
+
+        // 勝利条件の定義 (盤面のインデックスに対応)
+        const winningConditions = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8], // 横の列
+            [0, 3, 6], [1, 4, 7], [2, 5, 8], // 縦の列
+            [0, 4, 8], [2, 4, 6]             // 斜めの列
+        ];
+
+        // ゲームの初期化関数
+        function initializeGame() {
+            currentPlayer = 'X';
+            board.fill('');
+            isGameActive = true;
+            statusDisplay.textContent = `プレイヤー ${currentPlayer} の番です`;
+            
+            // 既存のセルをクリアし、新しいセルを生成 (初回のみ生成)
+            if (cells.length === 0) {
+                for (let i = 0; i < 9; i++) {
+                    const cell = document.createElement('button');
+                    cell.classList.add(
+                        'cell-button', // カスタムフォーカススタイル用
+                        'bg-white', 
+                        'border', 'border-gray-300',
+                        'text-5xl', 'sm:text-6xl', 'font-bold', 
+                        'flex', 'items-center', 'justify-center',
+                        'hover:bg-gray-100', 
+                        'transition', 'duration-150', 'ease-in-out',
+                        'aspect-square', // セルを正方形に保つ
+                        'focus:outline-none' // Tailwindのデフォルトフォーカスを削除
+                    );
+                    cell.dataset.index = i;
+                    cell.addEventListener('click', handleCellClick);
+                    gameBoardElement.appendChild(cell);
+                    cells.push(cell);
+                }
+            } else {
+                // 2回目以降はセルの内容と状態をリセット
+                cells.forEach(cell => {
+                    cell.textContent = '';
+                    cell.disabled = false;
+                    cell.classList.remove('player-x', 'player-o', 'winning-cell');
+                });
+            }
+        }
+
+        // セルがクリックされたときの処理
+        function handleCellClick(event) {
+            const clickedCell = event.target;
+            const clickedCellIndex = parseInt(clickedCell.dataset.index);
+
+            // セルが既に埋まっているか、ゲームが終了している場合は何もしない
+            if (board[clickedCellIndex] !== '' || !isGameActive) {
+                return;
+            }
+
+            // 盤面の状態を更新し、セルにマークを表示
+            board[clickedCellIndex] = currentPlayer;
+            clickedCell.textContent = currentPlayer;
+            clickedCell.disabled = true; // クリックされたセルを無効化
+            clickedCell.classList.add(currentPlayer === 'X' ? 'player-x' : 'player-o');
+
+            // 勝敗をチェック
+            checkResult();
+        }
+
+        // 勝敗と引き分けのチェック関数
+        function checkResult() {
+            let roundWon = false;
+            let winningCombination = null;
+
+            for (let i = 0; i < winningConditions.length; i++) {
+                const winCondition = winningConditions[i];
+                const a = board[winCondition[0]];
+                const b = board[winCondition[1]];
+                const c = board[winCondition[2]];
+
+                if (a === '' || b === '' || c === '') {
+                    continue; // いずれかのセルが空なら、この組み合わせでは勝利ではない
+                }
+                if (a === b && b === c) {
+                    roundWon = true; // 3つのセルが同じマークなら勝利
+                    winningCombination = winCondition;
+                    break;
+                }
+            }
+
+            if (roundWon) {
+                statusDisplay.textContent = ''; // 勝敗が決まったらターン表示は消す
+                showCustomMessage(`プレイヤー ${currentPlayer} の勝ちです！ 🎉`);
+                isGameActive = false;
+                // 勝利したセルをハイライト
+                if (winningCombination) {
+                    winningCombination.forEach(index => {
+                        cells[index].classList.add('winning-cell');
+                    });
+                }
+                return;
+            }
+
+            // 全てのセルが埋まっているか (引き分けのチェック)
+            if (!board.includes('')) {
+                statusDisplay.textContent = '';
+                showCustomMessage('引き分けです！ 🤝');
+                isGameActive = false;
+                return;
+            }
+
+            // ゲームが続く場合はプレイヤーを交代
+            changePlayer();
+        }
+
+        // プレイヤーを交代する関数
+        function changePlayer() {
+            currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+            statusDisplay.textContent = `プレイヤー ${currentPlayer} の番です`;
+        }
+
+        // ゲームをリセットする関数
+        function resetGame() {
+            initializeGame(); // ゲームを初期状態に戻す
+        }
+
+        // カスタムメッセージを表示する関数
+        function showCustomMessage(message) {
+            messageText.textContent = message;
+            messageBox.classList.remove('hidden');
+        }
+
+        // カスタムメッセージを閉じる関数
+        function closeCustomMessage() {
+            messageBox.classList.add('hidden');
+        }
+
+        // イベントリスナーの設定
+        resetButton.addEventListener('click', resetGame);
+        closeMessageButton.addEventListener('click', closeCustomMessage);
+
+        // ゲーム開始
+        initializeGame();
+    </script>
+
+</body>
+</html>
